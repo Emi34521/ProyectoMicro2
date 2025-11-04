@@ -1,7 +1,8 @@
 # ProyectoMicro2
 ## Características a implementar: 
 ### 1. Sensor magnético MC-39
-Estado: incompleto
+Estado: Completo
+Utiliza el pin D5 para almacenar HIGH o LOW. Muestra un contador en terminal. 
 ### 2. Sensor ultra sónico 
 Estado: incompleto 
 ### 3. Sensor BH1750 (sensor de luz)
