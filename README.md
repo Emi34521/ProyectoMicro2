@@ -17,14 +17,14 @@ Estado: incompleto
 ### 8. Salida de datos a google sheets
 Estado: incompleto
 ## Resumen de los pines pensados--
-[!NOTE]
-Pin  Componente Función
-D1  I2C SCL     OLED + LM75 + BH1750
-D2  I2C         SDAOLED + LM75 + BH1750
-D3  HC-SR04     Echo
-D4  Servo       Señal PWM
-D5  MC-38       Sensor magnético
-D6  LED         RGBVerde
-D7  LED         RGBAzul
-D8  HC-SR04     Trigger
-A0  FC-28Humedad (analógico)
+>[!NOTE]
+>(Pin, Componente, Función)
+(D1,  I2C SCL,     OLED + LM75 + BH1750)
+(D2,  I2C SDA,     OLED + LM75 + BH1750)
+(D3,  HC-SR04,     Echo)
+(D4,  Servo,       Señal PWM)
+(D5,  MC-38,       Sensor magnético)
+(D6,  LED,         RGBVerde)
+(D7,  LED,         RGBAzul)
+(D8,  HC-SR04,     Trigger)
+(A0,  FC-28,       Humedad(analógico))
