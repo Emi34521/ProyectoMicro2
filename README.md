@@ -18,7 +18,7 @@
 ### 1. Sensor magnético MC-39
 Estado: Completo
 ### 2. Sensor ultra sónico 
-Estado: incompleto 
+Estado: Completo
 ### 3. Sensor BH1750 (sensor de luz)
 Estado: incompleto 
 ### 4. Sensor humedad FC-28 
