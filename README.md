@@ -19,25 +19,30 @@
 Estado: Completo
 ### 2. Sensor ultra sónico 
 Estado: Completo
-### 3. Sensor BH1750 (sensor de luz)
-Estado: incompleto 
+### 3. Sensor BMP180 (sensor presión)
+Estado: Completo
+Se cambió el sensor BH1750 por el BMP180 debido a diversos problemas con el sensor.
+Ahora la funcionalidad de este es determinar cambios de altura, se conectará un
+motor para que esté variando sus mediciones. Se implementará después.
 ### 4. Sensor humedad FC-28 
 Estado: incompleto
 ### 5. Sensor de temperatura LM-75
 Estado: incompleto
-### 6. LED rgb y servomotor mostrar resultados 
+### 6. Motor para variar altura
 Estado: incompleto
-### 7. Pantalla OLED mostrar resultados
+### 7. LED rgb y servomotor mostrar resultados 
 Estado: incompleto
-### 8. Salida de datos a google sheets
+### 8. Pantalla OLED mostrar resultados
+Estado: incompleto
+### 9. Salida de datos a google sheets
 Estado: incompleto
 ## Resumen de Pines
 
 | Pin ESP8266 | Componente | Función |
 |-------------|------------|---------|
 | **D0** | LED RGB | Rojo |
-| **D1** | I2C SCL | OLED + LM75 + BH1750 |
-| **D2** | I2C SDA | OLED + LM75 + BH1750 |
+| **D1** | I2C SCL | OLED + LM75 + BMP180 |
+| **D2** | I2C SDA | OLED + LM75 + BMP180 |
 | **D3** | HC-SR04 | Echo |
 | **D4** | Servo | Señal PWM |
 | **D5** | MC-38 | Sensor magnético |
