@@ -10,7 +10,7 @@
 - **Sensores**:
   - HC-SR04 (Ultrasonido)
   - LM75 (Temperatura)
-  - BH1750 (Luz ambiental)
+  - BMP180 (Presión)
   - FC-28 (Humedad de suelo)
   - MC-38 (Magnético/Proximidad)
 ---
