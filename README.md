@@ -31,7 +31,7 @@ valores de 0 a 24 --ambiente seco 5%
 valores de 50 a 120 --Húmedo, ideal para muchas plantas
 valores de 315 a 450 --Muy húmedo, sumergido en agua 
 ### 5. Sensor de temperatura LM-75
-Estado: incompleto
+Estado: Completo. Añadí algunas medidas de ejemplo. Están sujetas a cambios.
 ### 6. Motor para variar altura
 Estado: incompleto
 ### 7. LED rgb y servomotor mostrar resultados 

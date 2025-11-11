@@ -20,6 +20,10 @@ const int PIN_FC28 = A0;
 // ==================== OBJETOS ====================
 Adafruit_BMP085 bmp;
 
+// ==================== CONSTANTES LM75 ====================
+#define LM75_ADDRESS 0x48  // Dirección I2C del LM75
+#define LM75_TEMP_REGISTER 0x00  // Registro de temperatura
+
 // ==================== VARIABLES MC-38 ====================
 int contadorCerrado = 0;
 bool estadoAnterior = HIGH;
@@ -56,6 +60,11 @@ String nivelHumedad = "";
 const int VALOR_SECO = 20;     // Valor en aire seco
 const int VALOR_MOJADO = 400;  // Valor en agua
 const bool MODO_CALIBRACION = false; // Calibración completada
+
+// ==================== VARIABLES LM75 ====================
+float temperaturaLM75 = 0;
+String estadoTemp = "";
+bool lm75Detectado = false;
 
 // ==================== SETUP ====================
 void setup() {
@@ -117,8 +126,25 @@ void setup() {
     Serial.println("  SDA -> D2");
     bmp180Detectado = false;
   }
+  
+  // Inicializar LM75
+  Serial.println("\nIntentando iniciar LM75...");
+  
+  Wire.beginTransmission(0x48); // Dirección por defecto del LM75
+  if (Wire.endTransmission() == 0) {
+    Serial.println("✓ LM75 detectado en dirección 0x48");
+    lm75Detectado = true;
+  } else {
+    Serial.println("✗ LM75 no responde - Verifica conexiones:");
+    Serial.println("  VCC -> 3.3V");
+    Serial.println("  GND -> GND");
+    Serial.println("  SCL -> D1");
+    Serial.println("  SDA -> D2");
+    Serial.println("  A0, A1, A2 -> GND (dirección 0x48)");
+    lm75Detectado = false;
+  }
 
-  Serial.println("\nSensores: MC-38 + HC-SR04 + BMP180 + FC-28");
+  Serial.println("\nSensores: MC-38 + HC-SR04 + BMP180 + FC-28 + LM75");
   Serial.println("Radio de detección: 80cm | Umbral: 5cm");
   delay(1000);
 }
@@ -129,6 +155,7 @@ void loop() {
   leerHCSR04();
   leerBMP180();
   leerFC28();
+  leerLM75();
   mostrarDatos();
   
   delay(500); // Delay general del sistema
@@ -265,6 +292,58 @@ void leerFC28() {
   }
 }
 
+// ==================== FUNCIONES LM75 ====================
+float leerTemperaturaLM75Raw() {
+  Wire.beginTransmission(LM75_ADDRESS);
+  Wire.write(LM75_TEMP_REGISTER);
+  if (Wire.endTransmission() != 0) {
+    return -999; // Error de comunicación
+  }
+  
+  Wire.requestFrom(LM75_ADDRESS, 2);
+  if (Wire.available() < 2) {
+    return -999; // No hay datos disponibles
+  }
+  
+  byte msb = Wire.read();
+  byte lsb = Wire.read();
+  
+  // Convertir los dos bytes a temperatura
+  int16_t temp = (msb << 8) | lsb;
+  temp >>= 5; // Los 11 bits más significativos son la temperatura
+  
+  float celsius = temp * 0.125; // Cada bit representa 0.125°C
+  return celsius;
+}
+
+void leerLM75() {
+  if (!lm75Detectado) {
+    temperaturaLM75 = -999;
+    estadoTemp = "NO CONECTADO";
+    return;
+  }
+  
+  temperaturaLM75 = leerTemperaturaLM75Raw();
+  
+  if (temperaturaLM75 == -999) {
+    estadoTemp = "ERROR LECTURA";
+    return;
+  }
+  
+  // Clasificar temperatura ambiente
+  if (temperaturaLM75 < 10) {
+    estadoTemp = "FRÍO";
+  } else if (temperaturaLM75 < 20) {
+    estadoTemp = "FRESCO";
+  } else if (temperaturaLM75 < 26) {
+    estadoTemp = "CONFORTABLE";
+  } else if (temperaturaLM75 < 30) {
+    estadoTemp = "CÁLIDO";
+  } else {
+    estadoTemp = "CALIENTE";
+  }
+}
+
 // ==================== FUNCIÓN DIAGNÓSTICO I2C ====================
 void escanearI2C() {
   byte error, address;
@@ -360,5 +439,16 @@ void mostrarDatos() {
     Serial.print("]  (ADC: ");
     Serial.print(valorAnalogico);
     Serial.println(")");
+  }
+  
+  // LM75
+  Serial.print("LM75: ");
+  if (lm75Detectado) {
+    Serial.print(temperaturaLM75, 1);
+    Serial.print(" °C  [");
+    Serial.print(estadoTemp);
+    Serial.println("]");
+  } else {
+    Serial.println("[NO CONECTADO - Ver diagnóstico arriba]");
   }
 }
