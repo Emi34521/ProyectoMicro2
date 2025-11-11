@@ -25,7 +25,11 @@ Se cambió el sensor BH1750 por el BMP180 debido a diversos problemas con el sen
 Ahora la funcionalidad de este es determinar cambios de altura, se conectará un
 motor para que esté variando sus mediciones. Se implementará después.
 ### 4. Sensor humedad FC-28 
-Estado: incompleto
+Estado: Completo
+Calibración: 
+valores de 0 a 24 --ambiente seco 5%
+valores de 50 a 120 --Húmedo, ideal para muchas plantas
+valores de 315 a 450 --Muy húmedo, sumergido en agua 
 ### 5. Sensor de temperatura LM-75
 Estado: incompleto
 ### 6. Motor para variar altura

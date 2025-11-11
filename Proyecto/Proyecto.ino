@@ -10,6 +10,9 @@ const int PIN_MC38 = D5;
 const int PIN_TRIGGER = D8;
 const int PIN_ECHO = D3;
 
+// Sensor de Humedad FC-28
+const int PIN_FC28 = A0;
+
 // I2C (BMP180, LM75, OLED)
 // SCL: D1
 // SDA: D2
@@ -44,20 +47,41 @@ float altitudActual = 0.0;
 float deltaAltura = 0.0;
 bool bmp180Detectado = false;
 
+// ==================== VARIABLES FC-28 ====================
+int valorAnalogico = 0;
+int porcentajeHumedad = 0;
+String nivelHumedad = "";
+
+// Valores de calibración basados en TU sensor
+const int VALOR_SECO = 20;     // Valor en aire seco
+const int VALOR_MOJADO = 400;  // Valor en agua
+const bool MODO_CALIBRACION = false; // Calibración completada
+
 // ==================== SETUP ====================
 void setup() {
   Serial.begin(115200);
-  delay(100);
+  delay(500); // Delay más largo para estabilidad
+  
+  Serial.println("\n\n\n=== INICIANDO SISTEMA ===");
+  Serial.println("Esperando estabilización...");
+  delay(1000);
   
   // Configurar MC-38
   pinMode(PIN_MC38, INPUT_PULLUP);
+  Serial.println("✓ MC-38 configurado");
   
   // Configurar HC-SR04
   pinMode(PIN_TRIGGER, OUTPUT);
   pinMode(PIN_ECHO, INPUT);
+  Serial.println("✓ HC-SR04 configurado");
+  
+  // Configurar FC-28
+  pinMode(PIN_FC28, INPUT);
+  Serial.println("✓ FC-28 configurado");
   
   // Configurar I2C
   Wire.begin(D2, D1); // SDA, SCL
+  Serial.println("✓ I2C configurado");
   
   Serial.println("\n=== Sistema Iniciado ===");
   Serial.println("Escaneando bus I2C...");
@@ -94,7 +118,7 @@ void setup() {
     bmp180Detectado = false;
   }
 
-  Serial.println("\nSensores: MC-38 + HC-SR04 + BMP180");
+  Serial.println("\nSensores: MC-38 + HC-SR04 + BMP180 + FC-28");
   Serial.println("Radio de detección: 80cm | Umbral: 5cm");
   delay(1000);
 }
@@ -104,6 +128,7 @@ void loop() {
   leerMC38();
   leerHCSR04();
   leerBMP180();
+  leerFC28();
   mostrarDatos();
   
   delay(500); // Delay general del sistema
@@ -210,6 +235,36 @@ void leerBMP180() {
   deltaAltura = altitudActual - altitudBase;
 }
 
+// ==================== FUNCIONES FC-28 ====================
+void leerFC28() {
+  valorAnalogico = analogRead(PIN_FC28);
+  
+  if (MODO_CALIBRACION) {
+    // Modo calibración: solo mostrar valor RAW
+    porcentajeHumedad = -1;
+    nivelHumedad = "CALIBRANDO";
+    return;
+  }
+  
+  // Mapear el valor a porcentaje (0-100%)
+  // Este sensor: a MAYOR valor = MAYOR humedad
+  porcentajeHumedad = map(valorAnalogico, VALOR_SECO, VALOR_MOJADO, 0, 100);
+  porcentajeHumedad = constrain(porcentajeHumedad, 0, 100);
+  
+  // Clasificar nivel de humedad
+  if (porcentajeHumedad < 20) {
+    nivelHumedad = "MUY SECO";
+  } else if (porcentajeHumedad < 40) {
+    nivelHumedad = "SECO";
+  } else if (porcentajeHumedad < 60) {
+    nivelHumedad = "HÚMEDO";
+  } else if (porcentajeHumedad < 80) {
+    nivelHumedad = "MUY HÚMEDO";
+  } else {
+    nivelHumedad = "SATURADO";
+  }
+}
+
 // ==================== FUNCIÓN DIAGNÓSTICO I2C ====================
 void escanearI2C() {
   byte error, address;
@@ -287,5 +342,23 @@ void mostrarDatos() {
     Serial.println(" m");
   } else {
     Serial.println("[NO CONECTADO - Ver diagnóstico arriba]");
+  }
+  
+  // FC-28
+  Serial.print("FC-28: ");
+  
+  if (MODO_CALIBRACION) {
+    Serial.print("*** MODO CALIBRACIÓN ***  ADC RAW: ");
+    Serial.println(valorAnalogico);
+    Serial.println("  -> Coloca el sensor en AIRE SECO y anota el valor");
+    Serial.println("  -> Coloca el sensor en AGUA y anota el valor");
+    Serial.println("  -> Actualiza VALOR_SECO y VALOR_MOJADO en el código");
+  } else {
+    Serial.print(porcentajeHumedad);
+    Serial.print("% [");
+    Serial.print(nivelHumedad);
+    Serial.print("]  (ADC: ");
+    Serial.print(valorAnalogico);
+    Serial.println(")");
   }
 }
