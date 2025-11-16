@@ -1,6 +1,7 @@
 // ==================== LIBRERÍAS ====================
 #include <Wire.h>
 #include <Adafruit_BMP085.h>
+#include <Servo.h>
 
 // ==================== PINES ====================
 // Sensor Magnético MC-38
@@ -13,16 +14,28 @@ const int PIN_ECHO = D3;
 // Sensor de Humedad FC-28
 const int PIN_FC28 = A0;
 
+// LED RGB
+const int PIN_LED_ROJO = D0;
+const int PIN_LED_VERDE = D6;
+const int PIN_LED_AZUL = D7;
+
+// Servo Motor
+const int PIN_SERVO = D4;
+
 // I2C (BMP180, LM75, OLED)
 // SCL: D1
 // SDA: D2
 
 // ==================== OBJETOS ====================
 Adafruit_BMP085 bmp;
+Servo servoMotor;
 
 // ==================== CONSTANTES LM75 ====================
 #define LM75_ADDRESS 0x48  // Dirección I2C del LM75
 #define LM75_TEMP_REGISTER 0x00  // Registro de temperatura
+
+// ==================== VARIABLES LED RGB Y SERVO ====================
+int anguloServo = 90; // Posición inicial del servo (centro)
 
 // ==================== VARIABLES MC-38 ====================
 int contadorCerrado = 0;
@@ -88,6 +101,21 @@ void setup() {
   pinMode(PIN_FC28, INPUT);
   Serial.println("✓ FC-28 configurado");
   
+  // Configurar LED RGB
+  pinMode(PIN_LED_ROJO, OUTPUT);
+  pinMode(PIN_LED_VERDE, OUTPUT);
+  pinMode(PIN_LED_AZUL, OUTPUT);
+  // Apagar LED al inicio
+  digitalWrite(PIN_LED_ROJO, LOW);
+  digitalWrite(PIN_LED_VERDE, LOW);
+  digitalWrite(PIN_LED_AZUL, LOW);
+  Serial.println("✓ LED RGB configurado");
+  
+  // Configurar Servo
+  servoMotor.attach(PIN_SERVO);
+  servoMotor.write(anguloServo); // Posición inicial
+  Serial.println("✓ Servo configurado en posición inicial (90°)");
+  
   // Configurar I2C
   Wire.begin(D2, D1); // SDA, SCL
   Serial.println("✓ I2C configurado");
@@ -145,6 +173,7 @@ void setup() {
   }
 
   Serial.println("\nSensores: MC-38 + HC-SR04 + BMP180 + FC-28 + LM75");
+  Serial.println("Actuadores: LED RGB + Servo");
   Serial.println("Radio de detección: 80cm | Umbral: 5cm");
   delay(1000);
 }
@@ -156,6 +185,7 @@ void loop() {
   leerBMP180();
   leerFC28();
   leerLM75();
+  actualizarActuadores();
   mostrarDatos();
   
   delay(500); // Delay general del sistema
@@ -344,6 +374,34 @@ void leerLM75() {
   }
 }
 
+// ==================== FUNCIONES LED RGB Y SERVO ====================
+void actualizarActuadores() {
+  // ===== LED RGB: Indicador de estado combinado =====
+  // Apagar todos primero
+  digitalWrite(PIN_LED_ROJO, LOW);
+  digitalWrite(PIN_LED_VERDE, LOW);
+  digitalWrite(PIN_LED_AZUL, LOW);
+  
+  // PRIORIDAD 1: Movimiento detectado (ROJO)
+  if (movimientoDetectado) {
+    digitalWrite(PIN_LED_ROJO, HIGH);
+  }
+  // PRIORIDAD 2: Puerta cerrada (AZUL)
+  else if (digitalRead(PIN_MC38) == LOW) {
+    digitalWrite(PIN_LED_AZUL, HIGH);
+  }
+  // PRIORIDAD 3: Todo normal (VERDE)
+  else {
+    digitalWrite(PIN_LED_VERDE, HIGH);
+  }
+  
+  // ===== SERVO: Indicador de humedad del suelo =====
+  // Mapear porcentaje de humedad (0-100%) a ángulo del servo (0-180°)
+  anguloServo = map(porcentajeHumedad, 0, 100, 0, 180);
+  anguloServo = constrain(anguloServo, 0, 180);
+  servoMotor.write(anguloServo);
+}
+
 // ==================== FUNCIÓN DIAGNÓSTICO I2C ====================
 void escanearI2C() {
   byte error, address;
@@ -451,4 +509,21 @@ void mostrarDatos() {
   } else {
     Serial.println("[NO CONECTADO - Ver diagnóstico arriba]");
   }
+  
+  // Actuadores
+  Serial.print("LED RGB: ");
+  if (movimientoDetectado) {
+    Serial.print("🔴 ROJO (Movimiento detectado)");
+  } else if (digitalRead(PIN_MC38) == LOW) {
+    Serial.print("🔵 AZUL (Puerta cerrada)");
+  } else {
+    Serial.print("🟢 VERDE (Normal)");
+  }
+  Serial.println();
+  
+  Serial.print("SERVO: ");
+  Serial.print(anguloServo);
+  Serial.print("° (Humedad: ");
+  Serial.print(porcentajeHumedad);
+  Serial.println("%)");
 }
