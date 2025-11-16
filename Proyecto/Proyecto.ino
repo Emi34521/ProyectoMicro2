@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include <Adafruit_BMP085.h>
 #include <Servo.h>
+#include <U8g2lib.h>
 
 // ==================== PINES ====================
 // Sensor Magnético MC-38
@@ -29,6 +30,8 @@ const int PIN_SERVO = D4;
 // ==================== OBJETOS ====================
 Adafruit_BMP085 bmp;
 Servo servoMotor;
+// Probar con SH1106 primero (más común en pantallas 0.96")
+U8G2_SH1106_128X64_NONAME_F_HW_I2C display(U8G2_R0, U8X8_PIN_NONE);
 
 // ==================== CONSTANTES LM75 ====================
 #define LM75_ADDRESS 0x48  // Dirección I2C del LM75
@@ -36,6 +39,9 @@ Servo servoMotor;
 
 // ==================== VARIABLES LED RGB Y SERVO ====================
 int anguloServo = 90; // Posición inicial del servo (centro)
+bool oledDetectado = false;
+unsigned long ultimaActualizacionOLED = 0;
+const unsigned long INTERVALO_OLED = 1000; // Actualizar OLED cada 1 segundo (reduce parpadeo)
 
 // ==================== VARIABLES MC-38 ====================
 int contadorCerrado = 0;
@@ -63,6 +69,11 @@ float altitudBase = 0.0;
 float altitudActual = 0.0;
 float deltaAltura = 0.0;
 bool bmp180Detectado = false;
+
+// Sistema de pisos del edificio
+int pisoActual = 0; // 0=PB, 1-4=Pisos
+unsigned long ultimoCambioPiso = 0;
+const unsigned long INTERVALO_CAMBIO_PISO = 5000; // Cambiar de piso cada 5 segundos (simulación)
 
 // ==================== VARIABLES FC-28 ====================
 int valorAnalogico = 0;
@@ -171,11 +182,32 @@ void setup() {
     Serial.println("  A0, A1, A2 -> GND (dirección 0x48)");
     lm75Detectado = false;
   }
+  
+  // Inicializar OLED
+  Serial.println("\nIntentando iniciar OLED...");
+  
+  display.begin();
+  Wire.setClock(400000); // Velocidad I2C rápida
+  
+  // Test simple
+  display.clearBuffer();
+  display.setFont(u8g2_font_ncenB14_tr);
+  display.drawStr(0, 20, "SISTEMA");
+  display.setFont(u8g2_font_ncenB08_tr);
+  display.drawStr(0, 40, "Iniciando...");
+  display.sendBuffer();
+  
+  Serial.println("✓ OLED iniciado (SH1106)");
+  oledDetectado = true;
+  delay(2000);
 
   Serial.println("\nSensores: MC-38 + HC-SR04 + BMP180 + FC-28 + LM75");
-  Serial.println("Actuadores: LED RGB + Servo");
+  Serial.println("Actuadores: LED RGB + Servo + OLED");
   Serial.println("Radio de detección: 80cm | Umbral: 5cm");
-  delay(1000);
+  
+  // Delay adicional para estabilizar las primeras lecturas
+  Serial.println("\nEstabilizando sensores...");
+  delay(2000);
 }
 
 // ==================== LOOP ====================
@@ -186,6 +218,7 @@ void loop() {
   leerFC28();
   leerLM75();
   actualizarActuadores();
+  actualizarOLED();
   mostrarDatos();
   
   delay(500); // Delay general del sistema
@@ -289,7 +322,17 @@ void leerBMP180() {
   
   presion = bmp.readPressure() / 100.0; // Convertir a hPa
   altitudActual = leerAltitudFiltrada();
-  deltaAltura = altitudActual - altitudBase;
+  deltaAltura = altitudActual - altitudBase; // Sin multiplicador
+  
+  // Simulación de cambio de piso automático cada 5 segundos
+  unsigned long tiempoActual = millis();
+  if (tiempoActual - ultimoCambioPiso >= INTERVALO_CAMBIO_PISO) {
+    // Cambiar aleatoriamente de piso
+    int cambio = random(-1, 2); // -1, 0, o 1
+    pisoActual += cambio;
+    pisoActual = constrain(pisoActual, 0, 4); // Limitar entre PB y Piso 4
+    ultimoCambioPiso = tiempoActual;
+  }
 }
 
 // ==================== FUNCIONES FC-28 ====================
@@ -400,6 +443,104 @@ void actualizarActuadores() {
   anguloServo = map(porcentajeHumedad, 0, 100, 0, 180);
   anguloServo = constrain(anguloServo, 0, 180);
   servoMotor.write(anguloServo);
+}
+
+// ==================== FUNCIONES OLED ====================
+void actualizarOLED() {
+  if (!oledDetectado) return;
+  
+  // Actualizar solo cada INTERVALO_OLED para reducir parpadeo
+  unsigned long tiempoActual = millis();
+  if (tiempoActual - ultimaActualizacionOLED < INTERVALO_OLED) {
+    return;
+  }
+  ultimaActualizacionOLED = tiempoActual;
+  
+  display.clearBuffer();
+  display.setFont(u8g2_font_6x10_tr);
+  
+  // === LÍNEA 1: Puerta Automática ===
+  display.drawStr(0, 10, "Puerta:");
+  if (digitalRead(PIN_MC38) == LOW) {
+    display.drawStr(50, 10, "Cerrada");
+  } else {
+    display.drawStr(50, 10, "Abierta");
+  }
+  
+  // === LÍNEA 2: Sistema de Iluminación ===
+  display.drawStr(0, 21, "Luces:");
+  if (movimientoDetectado) {
+    display.drawStr(50, 21, "ENCENDIDAS");
+  } else {
+    display.drawStr(50, 21, "Apagadas");
+  }
+  
+  // === LÍNEA 3: Aire Acondicionado ===
+  display.drawStr(0, 32, "A/C:");
+  if (lm75Detectado && temperaturaLM75 != -999) {
+    if (temperaturaLM75 > 26) {
+      display.drawStr(50, 32, "ACTIVO");
+    } else {
+      display.drawStr(50, 32, "Apagado");
+    }
+    // Mostrar temperatura al lado
+    char tempBuf[10];
+    sprintf(tempBuf, "%.1fC", temperaturaLM75);
+    display.drawStr(95, 32, tempBuf);
+  } else {
+    display.drawStr(50, 32, "N/A");
+  }
+  
+  // === LÍNEA 4: Sistema de Riego ===
+  display.drawStr(0, 43, "Riego:");
+  char buffer[20];
+  if (porcentajeHumedad < 40) {
+    display.drawStr(50, 43, "ACTIVO");
+    sprintf(buffer, "%d%%", porcentajeHumedad);
+    display.drawStr(95, 43, buffer);
+  } else {
+    display.drawStr(50, 43, "Apagado");
+    sprintf(buffer, "%d%%", porcentajeHumedad);
+    display.drawStr(95, 43, buffer);
+  }
+  
+  // === LÍNEA 5: Ascensor (altura) ===
+  display.drawStr(0, 54, "Ascensor:");
+  if (bmp180Detectado) {
+    // Calcular planta actual basada en altura
+    float alturaTotal = deltaAltura;
+    int planta = 0;
+    
+    if (alturaTotal < 2.0) {
+      // Planta baja (0-2m)
+      planta = 0;
+      display.drawStr(55, 54, "PB");
+    } else if (alturaTotal < 6.0) {
+      // Planta 1 (2-6m)
+      planta = 1;
+      display.drawStr(55, 54, "Piso 1");
+    } else if (alturaTotal < 10.0) {
+      // Planta 2 (6-10m)
+      planta = 2;
+      display.drawStr(55, 54, "Piso 2");
+    } else if (alturaTotal < 14.0) {
+      // Planta 3 (10-14m)
+      planta = 3;
+      display.drawStr(55, 54, "Piso 3");
+    } else {
+      // Planta 4 o superior (14m+)
+      planta = 4;
+      display.drawStr(55, 54, "Piso 4");
+    }
+    
+    // Mostrar altura en metros al final
+    sprintf(buffer, "%.1fm", alturaTotal);
+    display.drawStr(95, 54, buffer);
+  } else {
+    display.drawStr(55, 54, "N/A");
+  }
+  
+  display.sendBuffer();
 }
 
 // ==================== FUNCIÓN DIAGNÓSTICO I2C ====================
@@ -526,4 +667,11 @@ void mostrarDatos() {
   Serial.print("° (Humedad: ");
   Serial.print(porcentajeHumedad);
   Serial.println("%)");
+  
+  Serial.print("OLED: ");
+  if (oledDetectado) {
+    Serial.println("✓ Mostrando datos");
+  } else {
+    Serial.println("[NO CONECTADO]");
+  }
 }

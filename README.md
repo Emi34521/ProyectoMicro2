@@ -33,11 +33,11 @@ valores de 315 a 450 --Muy húmedo, sumergido en agua
 ### 5. Sensor de temperatura LM-75
 Estado: Completo. Añadí algunas medidas de ejemplo. Están sujetas a cambios.
 ### 6. Motor para variar altura
-Estado: incompleto
+Estado: espera
 ### 7. LED rgb y servomotor mostrar resultados 
-Estado: incompleto
+Estado: completo
 ### 8. Pantalla OLED mostrar resultados
-Estado: incompleto
+Estado: completo
 ### 9. Salida de datos a google sheets
 Estado: incompleto
 ## Resumen de Pines
