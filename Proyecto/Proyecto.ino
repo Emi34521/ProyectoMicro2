@@ -9,11 +9,11 @@
 #include <WiFiClientSecure.h>
 
 // ==================== CONFIGURACIÓN WIFI ====================
-const char* ssid = "TU_WIFI_AQUI";          // Cambia esto
-const char* password = "TU_PASSWORD_AQUI";   // Cambia esto
+const char* ssid = "TIGO-998B";          // Cambia esto
+const char* password = "XD4D9697500513";   // Cambia esto
 
 // ==================== CONFIGURACIÓN GOOGLE SHEETS ====================
-const char* googleScriptURL = "https://script.google.com/macros/s/AKfycbwIqiQ1SJ7IsaZ2xwVd0OpypNfnuVy36MfyfZgsuMT7P9yAKVv2wo5UDpR8QxfUtKt_/exec";
+const char* googleScriptURL = "https://script.google.com/macros/s/AKfycbzyVb563JFpKpk37SfKWATk2WOZJ_-QjClpMjpNm7QAKvYUw7youGUy1_GxdyhsnQ3-/exec";
 
 // ==================== SERVIDOR WEB ====================
 ESP8266WebServer server(80);
@@ -145,14 +145,20 @@ int porcentajeHumedad = 0;
 String nivelHumedad = "";
 
 // Valores de calibración basados en TU sensor
-const int VALOR_SECO = 20;     // Valor en aire seco
-const int VALOR_MOJADO = 400;  // Valor en agua
+const int VALOR_SECO = 1024;     // Valor en aire seco
+const int VALOR_MOJADO = 355;  // Valor en agua
 const bool MODO_CALIBRACION = false; // Calibración completada
 
 // ==================== VARIABLES LM75 ====================
 float temperaturaLM75 = 0;
 String estadoTemp = "";
 bool lm75Detectado = false;
+
+// ==================== DECLARACIONES DE FUNCIONES ====================
+void configurarServidorWeb();
+void handleRoot();
+void handleStatus();
+void handleControl();
 
 // ==================== SETUP ====================
 void setup() {
@@ -223,11 +229,13 @@ void setup() {
   delay(200);
   
   // Inicializar BMP180
-  Serial.print("8. Iniciando BMP180...");
+  Serial.println("\n8. Iniciando BMP180...");
   if (bmp.begin()) {
-    Serial.println(" OK");
+    Serial.println("   ✓ BMP180 OK");
     bmp180Detectado = true;
     delay(500);
+    
+    // Inicializar el buffer con la altitud inicial
     float primera = bmp.readAltitude(101325);
     for (int i = 0; i < N; i++) {
       buffer[i] = primera;
@@ -237,98 +245,41 @@ void setup() {
     Serial.print(altitudBase);
     Serial.println(" m");
   } else {
-    Serial.println(" FALLO");
+    Serial.println("   ✗ BMP180 FALLO");
     bmp180Detectado = false;
   }
   delay(200);
   
   // Inicializar LM75
-  Serial.print("9. Iniciando LM75...");
+  Serial.println("\n9. Iniciando LM75...");
   Wire.beginTransmission(0x48);
   if (Wire.endTransmission() == 0) {
-    Serial.println(" OK");
+    Serial.println("   ✓ LM75 OK");
     lm75Detectado = true;
   } else {
-    Serial.println(" FALLO");
+    Serial.println("   ✗ LM75 FALLO");
     lm75Detectado = false;
   }
   delay(200);
   
   // Inicializar OLED
-  Serial.print("10. Iniciando OLED...");
+  Serial.println("\n10. Iniciando OLED...");
+  Serial.println("   Llamando display.begin()...");
+  
   display.begin();
+  
+  Serial.println("   Display iniciado, configurando I2C...");
   Wire.setClock(400000);
+  
+  Serial.println("   Dibujando pantalla inicial...");
   display.clearBuffer();
-  display.setFont(u8g2_font_ncenB08_tr);
-  display.drawStr(0, 20, "Sistema OK");
+  display.setFont(u8g2_font_ncenB10_tr);
+  display.drawStr(10, 30, "Sistema OK");
   display.sendBuffer();
-  Serial.println(" OK");
+  
+  Serial.println("   ✓ OLED OK");
   oledDetectado = true;
   delay(1000);
-  
-  // Inicializar BMP180
-  Serial.println("\nIntentando iniciar BMP180...");
-  
-  if (bmp.begin()) {
-    Serial.println("✓ BMP180 iniciado correctamente");
-    bmp180Detectado = true;
-    
-    delay(1000); // Estabilización de sensor
-    
-    // Inicializar el buffer con la altitud inicial
-    float primera = bmp.readAltitude(101325);
-    for (int i = 0; i < N; i++) {
-      buffer[i] = primera;
-    }
-    
-    altitudBase = primera;
-    Serial.print("Altitud base registrada: ");
-    Serial.print(altitudBase);
-    Serial.println(" m");
-    
-  } else {
-    Serial.println("✗ BMP180 no responde - Verifica conexiones:");
-    Serial.println("  VCC -> 3.3V");
-    Serial.println("  GND -> GND");
-    Serial.println("  SCL -> D1");
-    Serial.println("  SDA -> D2");
-    bmp180Detectado = false;
-  }
-  
-  // Inicializar LM75
-  Serial.println("\nIntentando iniciar LM75...");
-  
-  Wire.beginTransmission(0x48); // Dirección por defecto del LM75
-  if (Wire.endTransmission() == 0) {
-    Serial.println("✓ LM75 detectado en dirección 0x48");
-    lm75Detectado = true;
-  } else {
-    Serial.println("✗ LM75 no responde - Verifica conexiones:");
-    Serial.println("  VCC -> 3.3V");
-    Serial.println("  GND -> GND");
-    Serial.println("  SCL -> D1");
-    Serial.println("  SDA -> D2");
-    Serial.println("  A0, A1, A2 -> GND (dirección 0x48)");
-    lm75Detectado = false;
-  }
-  
-  // Inicializar OLED
-  Serial.println("\nIntentando iniciar OLED...");
-  
-  display.begin();
-  Wire.setClock(400000); // Velocidad I2C rápida
-  
-  // Test simple
-  display.clearBuffer();
-  display.setFont(u8g2_font_ncenB14_tr);
-  display.drawStr(0, 20, "SISTEMA");
-  display.setFont(u8g2_font_ncenB08_tr);
-  display.drawStr(0, 40, "Iniciando...");
-  display.sendBuffer();
-  
-  Serial.println("✓ OLED iniciado (SH1106)");
-  oledDetectado = true;
-  delay(2000);
 
   Serial.println("\nSensores: MC-38 + HC-SR04 + BMP180 + FC-28 + LM75");
   Serial.println("Actuadores: LED RGB + Servo + OLED");
@@ -337,6 +288,42 @@ void setup() {
   // Delay adicional para estabilizar las primeras lecturas
   Serial.println("\nEstabilizando sensores...");
   delay(2000);
+  
+  // ==================== CONECTAR WIFI ====================
+  Serial.println("\n=== CONECTANDO A WIFI ===");
+  Serial.print("SSID: ");
+  Serial.println(ssid);
+  Serial.print("Conectando");
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+
+  int intentos = 0;
+  while (WiFi.status() != WL_CONNECTED && intentos < 30) {
+    delay(500);
+    Serial.print(".");
+    intentos++;
+  }
+
+  Serial.println();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("✓ WiFi CONECTADO");
+    Serial.print("IP: ");
+    Serial.println(WiFi.localIP());
+    Serial.print("Servidor web en: http://");
+    Serial.println(WiFi.localIP());
+    
+    // Iniciar servidor web
+    configurarServidorWeb();
+    server.begin();
+    Serial.println("✓ Servidor web iniciado");
+  } else {
+    Serial.println("✗ NO SE PUDO CONECTAR AL WIFI");
+    Serial.println("Continuando sin WiFi...");
+  }
+
+  Serial.println("\n=== SISTEMA LISTO ===");
 }
 
 // ==================== LOOP ====================
