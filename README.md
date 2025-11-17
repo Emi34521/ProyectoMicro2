@@ -33,7 +33,8 @@ valores de 315 a 450 --Muy húmedo, sumergido en agua
 ### 5. Sensor de temperatura LM-75
 Estado: Completo. Añadí algunas medidas de ejemplo. Están sujetas a cambios.
 ### 6. Motor para variar altura
-Estado: espera
+Estado: espera (cancelado)
+La placa no tiene la suficiente intensidad ni voltaje para alimentar al servomotor y al motor. Por lo que decidió eliminarlos
 ### 7. LED rgb y servomotor mostrar resultados 
 Estado: completo
 ### 8. Pantalla OLED mostrar resultados

@@ -10,7 +10,7 @@
 
 // ==================== CONFIGURACIÓN WIFI ====================
 const char* ssid = "TIGO-998B";          // Cambia esto
-const char* password = "XD4D9697500513";   // Cambia esto
+const char* password = "4D9697500513";   // Cambia esto
 
 // ==================== CONFIGURACIÓN GOOGLE SHEETS ====================
 const char* googleScriptURL = "https://script.google.com/macros/s/AKfycbzyVb563JFpKpk37SfKWATk2WOZJ_-QjClpMjpNm7QAKvYUw7youGUy1_GxdyhsnQ3-/exec";
@@ -348,8 +348,9 @@ void loop() {
 void leerMC38() {
   bool estadoActual = digitalRead(PIN_MC38);
   
-  // Detectar flanco de bajada (de abierto a cerrado)
-  if (estadoActual == LOW && estadoAnterior == HIGH) {
+  // Detectar flanco de subida (de abierto a cerrado)
+  // CAMBIO: Ahora HIGH = cerrado
+  if (estadoActual == HIGH && estadoAnterior == LOW) {
     contadorCerrado++;
   }
   
@@ -557,7 +558,8 @@ void actualizarActuadores() {
   if (modoManualPuerta) {
     puertaCerrada = estadoManualPuerta;
   } else {
-    puertaCerrada = (digitalRead(PIN_MC38) == LOW);
+    // CAMBIO: HIGH = cerrado, LOW = abierto
+    puertaCerrada = (digitalRead(PIN_MC38) == HIGH);
   }
   
   // ===== LED RGB: Indicador de estado combinado =====
@@ -612,7 +614,8 @@ void calcularConsumoEnergetico() {
   bool lucesEncendidas = modoManualLuces ? estadoManualLuces : movimientoDetectado;
   bool acActivo = modoManualAC ? estadoManualAC : (lm75Detectado && temperaturaLM75 > 26);
   bool riegoActivo = modoManualRiego ? estadoManualRiego : (porcentajeHumedad < 40);
-  bool puertaCerrada = modoManualPuerta ? estadoManualPuerta : (digitalRead(PIN_MC38) == LOW);
+  // CAMBIO: HIGH = cerrado, LOW = abierto
+  bool puertaCerrada = modoManualPuerta ? estadoManualPuerta : (digitalRead(PIN_MC38) == HIGH);
   int pisoParaCalculo = modoManualAscensor ? pisoManualAscensor : pisoActual;
   bool ascensorMoviendo = (pisoParaCalculo != pisoAnterior);
   
@@ -637,14 +640,24 @@ void calcularConsumoEnergetico() {
   acActivoAnterior = acActivo;
   
   // === RIEGO ===
-  if (riegoActivo && !riegoActivoAnterior) {
+if (riegoActivo) {
+  if (!riegoActivoAnterior) {
+    // Se acaba de activar
     tiempoInicioRiego = tiempoActual;
-  } else if (!riegoActivo && riegoActivoAnterior) {
+  } else {
+    // Está activo: calcular consumo acumulado
     float tiempoHoras = (tiempoActual - tiempoInicioRiego) / 3600000.0;
-    energiaRiego = CONSUMO_RIEGO * tiempoHoras;
+    energiaRiego += CONSUMO_RIEGO * tiempoHoras;
+    tiempoInicioRiego = tiempoActual; // Resetear para próximo cálculo
   }
-  riegoActivoAnterior = riegoActivo;
-  
+} else {
+  if (riegoActivoAnterior) {
+    // Se acaba de desactivar - registrar último periodo
+    float tiempoHoras = (tiempoActual - tiempoInicioRiego) / 3600000.0;
+    energiaRiego += CONSUMO_RIEGO * tiempoHoras;
+  }
+}
+riegoActivoAnterior = riegoActivo;
   // === PUERTA ===
   if (puertaCerrada && !puertaCerradaAnterior) {
     tiempoInicioPuerta = tiempoActual;
@@ -795,7 +808,8 @@ void handleStatus() {
   bool lucesEncendidas = modoManualLuces ? estadoManualLuces : movimientoDetectado;
   bool acActivo = modoManualAC ? estadoManualAC : (lm75Detectado && temperaturaLM75 > 26);
   bool riegoActivo = modoManualRiego ? estadoManualRiego : (porcentajeHumedad < 40);
-  bool puertaCerrada = modoManualPuerta ? estadoManualPuerta : (digitalRead(PIN_MC38) == LOW);
+  // CAMBIO: HIGH = cerrado, LOW = abierto
+  bool puertaCerrada = modoManualPuerta ? estadoManualPuerta : (digitalRead(PIN_MC38) == HIGH);
   int pisoMostrar = modoManualAscensor ? pisoManualAscensor : pisoActual;
   
   String pisoTexto = (pisoMostrar == 0) ? "PB" : ("Piso " + String(pisoMostrar));
@@ -855,7 +869,6 @@ void handleControl() {
 void actualizarOLED() {
   if (!oledDetectado) return;
   
-  // Actualizar solo cada INTERVALO_OLED para reducir parpadeo
   unsigned long tiempoActual = millis();
   if (tiempoActual - ultimaActualizacionOLED < INTERVALO_OLED) {
     return;
@@ -867,7 +880,8 @@ void actualizarOLED() {
   
   // === LÍNEA 1: Puerta Automática ===
   display.drawStr(0, 10, "Puerta:");
-  if (digitalRead(PIN_MC38) == LOW) {
+  // CAMBIO: HIGH = cerrado, LOW = abierto
+  if (digitalRead(PIN_MC38) == HIGH) {
     display.drawStr(50, 10, "Cerrada");
   } else {
     display.drawStr(50, 10, "Abierta");
@@ -983,7 +997,8 @@ void mostrarDatos() {
   
   // MC-38
   Serial.print("MC-38: ");
-  if (digitalRead(PIN_MC38) == LOW) {
+  // CAMBIO: HIGH = cerrado, LOW = abierto
+  if (digitalRead(PIN_MC38) == HIGH) {
     Serial.print("CERRADO");
   } else {
     Serial.print("ABIERTO ");
@@ -1054,7 +1069,7 @@ void mostrarDatos() {
   Serial.print("LED RGB: ");
   if (movimientoDetectado) {
     Serial.print("🔴 ROJO (Movimiento detectado)");
-  } else if (digitalRead(PIN_MC38) == LOW) {
+  } else if (digitalRead(PIN_MC38) == HIGH) {  // CAMBIO: HIGH = cerrado
     Serial.print("🔵 AZUL (Puerta cerrada)");
   } else {
     Serial.print("🟢 VERDE (Normal)");
