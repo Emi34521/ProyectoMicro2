@@ -39,7 +39,7 @@ Estado: completo
 ### 8. Pantalla OLED mostrar resultados
 Estado: completo
 ### 9. Salida de datos a google sheets
-Estado: incompleto
+Estado: casi completo
 ## Resumen de Pines
 
 | Pin ESP8266 | Componente | Función |

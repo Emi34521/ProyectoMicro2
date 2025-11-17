@@ -3,6 +3,20 @@
 #include <Adafruit_BMP085.h>
 #include <Servo.h>
 #include <U8g2lib.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <ESP8266HTTPClient.h>
+#include <WiFiClientSecure.h>
+
+// ==================== CONFIGURACIÓN WIFI ====================
+const char* ssid = "TU_WIFI_AQUI";          // Cambia esto
+const char* password = "TU_PASSWORD_AQUI";   // Cambia esto
+
+// ==================== CONFIGURACIÓN GOOGLE SHEETS ====================
+const char* googleScriptURL = "https://script.google.com/macros/s/AKfycbwIqiQ1SJ7IsaZ2xwVd0OpypNfnuVy36MfyfZgsuMT7P9yAKVv2wo5UDpR8QxfUtKt_/exec";
+
+// ==================== SERVIDOR WEB ====================
+ESP8266WebServer server(80);
 
 // ==================== PINES ====================
 // Sensor Magnético MC-38
@@ -40,6 +54,7 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C display(U8G2_R0, U8X8_PIN_NONE);
 // ==================== VARIABLES LED RGB Y SERVO ====================
 int anguloServo = 90; // Posición inicial del servo (centro)
 bool oledDetectado = false;
+bool servoInicializado = false; // Para asegurar posición inicial
 unsigned long ultimaActualizacionOLED = 0;
 const unsigned long INTERVALO_OLED = 1000; // Actualizar OLED cada 1 segundo (reduce parpadeo)
 
@@ -74,6 +89,55 @@ bool bmp180Detectado = false;
 int pisoActual = 0; // 0=PB, 1-4=Pisos
 unsigned long ultimoCambioPiso = 0;
 const unsigned long INTERVALO_CAMBIO_PISO = 5000; // Cambiar de piso cada 5 segundos (simulación)
+
+// ==================== VARIABLES CONSUMO ENERGÉTICO ====================
+// Consumos en Watts
+const float CONSUMO_LUCES = 10.0;        // 10W LED
+const float CONSUMO_AC = 1000.0;         // 1000W (1kW)
+const float CONSUMO_RIEGO = 50.0;        // 50W bomba
+const float CONSUMO_PUERTA = 30.0;       // 30W motor
+const float CONSUMO_ASCENSOR = 200.0;    // 200W motor
+
+// Estados previos para detectar cambios
+bool lucesEncendidasAnterior = false;
+bool acActivoAnterior = false;
+bool riegoActivoAnterior = false;
+bool puertaCerradaAnterior = false;
+int pisoAnterior = 0;
+
+// Acumuladores de energía (Wh)
+float energiaLuces = 0;
+float energiaAC = 0;
+float energiaRiego = 0;
+float energiaPuerta = 0;
+float energiaAscensor = 0;
+
+// Tiempos de inicio para cada sistema
+unsigned long tiempoInicioLuces = 0;
+unsigned long tiempoInicioAC = 0;
+unsigned long tiempoInicioRiego = 0;
+unsigned long tiempoInicioPuerta = 0;
+unsigned long tiempoInicioAscensor = 0;
+
+// Control de envío a Google Sheets
+unsigned long ultimoEnvio = 0;
+const unsigned long INTERVALO_ENVIO = 10000; // Enviar cada 10 segundos
+
+// ==================== VARIABLES CONTROL MANUAL ====================
+bool modoManualLuces = false;
+bool modoManualAC = false;
+bool modoManualRiego = false;
+bool modoManualPuerta = false;
+bool modoManualAscensor = false;
+
+bool estadoManualLuces = false;
+bool estadoManualAC = false;
+bool estadoManualRiego = false;
+bool estadoManualPuerta = false;
+int pisoManualAscensor = 0;
+
+unsigned long tiempoControlManual = 0;
+const unsigned long TIMEOUT_MANUAL = 600000; // 10 minutos en milisegundos
 
 // ==================== VARIABLES FC-28 ====================
 int valorAnalogico = 0;
@@ -134,8 +198,73 @@ void setup() {
   Serial.println("\n=== Sistema Iniciado ===");
   Serial.println("Escaneando bus I2C...");
   
-  // Escanear dispositivos I2C
-  escanearI2C();
+  // Escanear I2C
+  Serial.println();
+  Serial.println("7. Escaneando I2C...");
+  byte error, address;
+  int nDevices = 0;
+  for(address = 1; address < 127; address++ ) {
+    Wire.beginTransmission(address);
+    error = Wire.endTransmission();
+    if (error == 0) {
+      Serial.print("   Dispositivo en 0x");
+      if (address < 16) Serial.print("0");
+      Serial.print(address, HEX);
+      if (address == 0x77) Serial.print(" (BMP180)");
+      if (address == 0x48) Serial.print(" (LM75)");
+      if (address == 0x3C) Serial.print(" (OLED)");
+      Serial.println();
+      nDevices++;
+    }
+  }
+  Serial.print("   Total: ");
+  Serial.print(nDevices);
+  Serial.println(" dispositivos");
+  delay(200);
+  
+  // Inicializar BMP180
+  Serial.print("8. Iniciando BMP180...");
+  if (bmp.begin()) {
+    Serial.println(" OK");
+    bmp180Detectado = true;
+    delay(500);
+    float primera = bmp.readAltitude(101325);
+    for (int i = 0; i < N; i++) {
+      buffer[i] = primera;
+    }
+    altitudBase = primera;
+    Serial.print("   Altitud base: ");
+    Serial.print(altitudBase);
+    Serial.println(" m");
+  } else {
+    Serial.println(" FALLO");
+    bmp180Detectado = false;
+  }
+  delay(200);
+  
+  // Inicializar LM75
+  Serial.print("9. Iniciando LM75...");
+  Wire.beginTransmission(0x48);
+  if (Wire.endTransmission() == 0) {
+    Serial.println(" OK");
+    lm75Detectado = true;
+  } else {
+    Serial.println(" FALLO");
+    lm75Detectado = false;
+  }
+  delay(200);
+  
+  // Inicializar OLED
+  Serial.print("10. Iniciando OLED...");
+  display.begin();
+  Wire.setClock(400000);
+  display.clearBuffer();
+  display.setFont(u8g2_font_ncenB08_tr);
+  display.drawStr(0, 20, "Sistema OK");
+  display.sendBuffer();
+  Serial.println(" OK");
+  oledDetectado = true;
+  delay(1000);
   
   // Inicializar BMP180
   Serial.println("\nIntentando iniciar BMP180...");
@@ -212,14 +341,18 @@ void setup() {
 
 // ==================== LOOP ====================
 void loop() {
+  server.handleClient(); // Manejar peticiones web
+  verificarTimeoutManual();
   leerMC38();
   leerHCSR04();
   leerBMP180();
   leerFC28();
   leerLM75();
   actualizarActuadores();
+  calcularConsumoEnergetico();
   actualizarOLED();
   mostrarDatos();
+  enviarDatosGoogleSheets();
   
   delay(500); // Delay general del sistema
 }
@@ -419,30 +552,316 @@ void leerLM75() {
 
 // ==================== FUNCIONES LED RGB Y SERVO ====================
 void actualizarActuadores() {
+  // Verificar si hay control manual activo
+  bool lucesEncendidas, acActivo, puertaCerrada;
+  
+  if (modoManualLuces) {
+    lucesEncendidas = estadoManualLuces;
+  } else {
+    lucesEncendidas = movimientoDetectado;
+  }
+  
+  if (modoManualAC) {
+    acActivo = estadoManualAC;
+  } else {
+    acActivo = (lm75Detectado && temperaturaLM75 > 26);
+  }
+  
+  if (modoManualPuerta) {
+    puertaCerrada = estadoManualPuerta;
+  } else {
+    puertaCerrada = (digitalRead(PIN_MC38) == LOW);
+  }
+  
   // ===== LED RGB: Indicador de estado combinado =====
-  // Apagar todos primero
   digitalWrite(PIN_LED_ROJO, LOW);
   digitalWrite(PIN_LED_VERDE, LOW);
   digitalWrite(PIN_LED_AZUL, LOW);
   
-  // PRIORIDAD 1: Movimiento detectado (ROJO)
-  if (movimientoDetectado) {
+  if (lucesEncendidas) {
     digitalWrite(PIN_LED_ROJO, HIGH);
-  }
-  // PRIORIDAD 2: Puerta cerrada (AZUL)
-  else if (digitalRead(PIN_MC38) == LOW) {
+  } else if (puertaCerrada) {
     digitalWrite(PIN_LED_AZUL, HIGH);
-  }
-  // PRIORIDAD 3: Todo normal (VERDE)
-  else {
+  } else {
     digitalWrite(PIN_LED_VERDE, HIGH);
   }
   
-  // ===== SERVO: Indicador de humedad del suelo =====
-  // Mapear porcentaje de humedad (0-100%) a ángulo del servo (0-180°)
-  anguloServo = map(porcentajeHumedad, 0, 100, 0, 180);
+  // ===== SERVO: Indicador de humedad =====
+  int humedadParaServo = porcentajeHumedad;
+  if (modoManualRiego) {
+    humedadParaServo = estadoManualRiego ? 100 : 0;
+  }
+  
+  anguloServo = map(humedadParaServo, 0, 100, 0, 180);
   anguloServo = constrain(anguloServo, 0, 180);
   servoMotor.write(anguloServo);
+}
+
+// ==================== FUNCIONES CONTROL MANUAL ====================
+void verificarTimeoutManual() {
+  unsigned long tiempoActual = millis();
+  
+  if (modoManualLuces || modoManualAC || modoManualRiego || 
+      modoManualPuerta || modoManualAscensor) {
+    
+    if (tiempoActual - tiempoControlManual >= TIMEOUT_MANUAL) {
+      // Timeout: volver a modo automático
+      modoManualLuces = false;
+      modoManualAC = false;
+      modoManualRiego = false;
+      modoManualPuerta = false;
+      modoManualAscensor = false;
+      
+      Serial.println("⏱️ Timeout: Volviendo a modo automático");
+    }
+  }
+}
+
+// ==================== FUNCIONES CONSUMO ENERGÉTICO ====================
+void calcularConsumoEnergetico() {
+  unsigned long tiempoActual = millis();
+  
+  // Estados actuales (considerando modo manual)
+  bool lucesEncendidas = modoManualLuces ? estadoManualLuces : movimientoDetectado;
+  bool acActivo = modoManualAC ? estadoManualAC : (lm75Detectado && temperaturaLM75 > 26);
+  bool riegoActivo = modoManualRiego ? estadoManualRiego : (porcentajeHumedad < 40);
+  bool puertaCerrada = modoManualPuerta ? estadoManualPuerta : (digitalRead(PIN_MC38) == LOW);
+  int pisoParaCalculo = modoManualAscensor ? pisoManualAscensor : pisoActual;
+  bool ascensorMoviendo = (pisoParaCalculo != pisoAnterior);
+  
+  // === LUCES ===
+  if (lucesEncendidas && !lucesEncendidasAnterior) {
+    // Se acaban de encender
+    tiempoInicioLuces = tiempoActual;
+  } else if (!lucesEncendidas && lucesEncendidasAnterior) {
+    // Se acaban de apagar - calcular consumo y enviar
+    float tiempoHoras = (tiempoActual - tiempoInicioLuces) / 3600000.0;
+    energiaLuces = CONSUMO_LUCES * tiempoHoras;
+  }
+  lucesEncendidasAnterior = lucesEncendidas;
+  
+  // === AIRE ACONDICIONADO ===
+  if (acActivo && !acActivoAnterior) {
+    tiempoInicioAC = tiempoActual;
+  } else if (!acActivo && acActivoAnterior) {
+    float tiempoHoras = (tiempoActual - tiempoInicioAC) / 3600000.0;
+    energiaAC = CONSUMO_AC * tiempoHoras;
+  }
+  acActivoAnterior = acActivo;
+  
+  // === RIEGO ===
+  if (riegoActivo && !riegoActivoAnterior) {
+    tiempoInicioRiego = tiempoActual;
+  } else if (!riegoActivo && riegoActivoAnterior) {
+    float tiempoHoras = (tiempoActual - tiempoInicioRiego) / 3600000.0;
+    energiaRiego = CONSUMO_RIEGO * tiempoHoras;
+  }
+  riegoActivoAnterior = riegoActivo;
+  
+  // === PUERTA ===
+  if (puertaCerrada && !puertaCerradaAnterior) {
+    tiempoInicioPuerta = tiempoActual;
+  } else if (!puertaCerrada && puertaCerradaAnterior) {
+    float tiempoHoras = (tiempoActual - tiempoInicioPuerta) / 3600000.0;
+    energiaPuerta = CONSUMO_PUERTA * tiempoHoras;
+  }
+  puertaCerradaAnterior = puertaCerrada;
+  
+  // === ASCENSOR ===
+  if (ascensorMoviendo) {
+    if (pisoParaCalculo != pisoAnterior) {
+      // Ascensor se movió, calcular consumo por movimiento
+      float tiempoHoras = 5.0 / 3600.0; // 5 segundos en horas
+      energiaAscensor = CONSUMO_ASCENSOR * tiempoHoras;
+    }
+  }
+  pisoAnterior = pisoParaCalculo;
+}
+
+// ==================== FUNCIONES GOOGLE SHEETS ====================
+void enviarDatosGoogleSheets() {
+  // Solo enviar si hay WiFi y ha pasado el intervalo
+  if (WiFi.status() != WL_CONNECTED) return;
+  
+  unsigned long tiempoActual = millis();
+  if (tiempoActual - ultimoEnvio < INTERVALO_ENVIO) return;
+  
+  // Solo enviar si hay consumo registrado
+  if (energiaLuces == 0 && energiaAC == 0 && energiaRiego == 0 && 
+      energiaPuerta == 0 && energiaAscensor == 0) return;
+  
+  ultimoEnvio = tiempoActual;
+  
+  WiFiClientSecure client;
+  client.setInsecure(); // Para HTTPS sin verificar certificado
+  HTTPClient http;
+  
+  // Construir URL con parámetros
+  String timestamp = String(millis() / 1000); // segundos desde inicio
+  float totalWh = energiaLuces + energiaAC + energiaRiego + energiaPuerta + energiaAscensor;
+  
+  String url = String(googleScriptURL) + 
+               "?timestamp=" + timestamp +
+               "&luces_w=" + String(energiaLuces, 4) +
+               "&ac_w=" + String(energiaAC, 4) +
+               "&riego_w=" + String(energiaRiego, 4) +
+               "&puerta_w=" + String(energiaPuerta, 4) +
+               "&ascensor_w=" + String(energiaAscensor, 4) +
+               "&total_w=" + String(totalWh, 4);
+  
+  Serial.println("\n=== Enviando a Google Sheets ===");
+  Serial.println(url);
+  
+  http.begin(client, url);
+  int httpCode = http.GET();
+  
+  if (httpCode > 0) {
+    String payload = http.getString();
+    Serial.print("Respuesta: ");
+    Serial.println(payload);
+    
+    // Resetear contadores después de enviar
+    energiaLuces = 0;
+    energiaAC = 0;
+    energiaRiego = 0;
+    energiaPuerta = 0;
+    energiaAscensor = 0;
+  } else {
+    Serial.print("Error HTTP: ");
+    Serial.println(httpCode);
+  }
+  
+  http.end();
+}
+
+// ==================== SERVIDOR WEB ====================
+void configurarServidorWeb() {
+  // Página principal
+  server.on("/", handleRoot);
+  server.on("/api/status", handleStatus);
+  server.on("/api/control", handleControl);
+}
+
+void handleRoot() {
+  String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>";
+  html += "<title>Casa Inteligente</title><style>";
+  html += "body{font-family:Arial;margin:20px;background:#f0f0f0}";
+  html += ".container{max-width:800px;margin:auto;background:white;padding:20px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.1)}";
+  html += "h1{color:#333;text-align:center}";
+  html += ".card{background:#f9f9f9;padding:15px;margin:10px 0;border-radius:5px;border-left:4px solid #4CAF50}";
+  html += ".status{font-size:18px;margin:10px 0}";
+  html += ".on{color:#4CAF50;font-weight:bold}";
+  html += ".off{color:#999}";
+  html += "button{padding:10px 20px;margin:5px;border:none;border-radius:5px;cursor:pointer;font-size:14px}";
+  html += ".btn-on{background:#4CAF50;color:white}";
+  html += ".btn-off{background:#f44336;color:white}";
+  html += ".consumo{background:#2196F3;color:white;padding:10px;border-radius:5px;text-align:center;font-size:20px;margin:20px 0}";
+  html += "</style></head><body>";
+  html += "<div class='container'><h1>🏠 Casa Inteligente</h1>";
+  html += "<div id='status'>Cargando...</div>";
+  html += "</div>";
+  html += "<script>";
+  html += "function updateStatus(){fetch('/api/status').then(r=>r.json()).then(d=>{";
+  html += "let h='';";
+  html += "h+='<div class=\"card\"><h2>💡 Luces</h2>';";
+  html += "h+='<div class=\"status\">Estado: <span class=\"'+(d.luces?'on':'off')+'\">'+( d.luces?'ENCENDIDAS':'Apagadas')+'</span></div>';";
+  html += "h+='<button class=\"btn-on\" onclick=\"control(\\'luces\\',1)\">Encender</button>';";
+  html += "h+='<button class=\"btn-off\" onclick=\"control(\\'luces\\',0)\">Apagar</button></div>';";
+  html += "h+='<div class=\"card\"><h2>❄️ Aire Acondicionado</h2>';";
+  html += "h+='<div class=\"status\">Estado: <span class=\"'+(d.ac?'on':'off')+'\">'+( d.ac?'ACTIVO':'Apagado')+'</span></div>';";
+  html += "h+='<div class=\"status\">Temperatura: '+d.temp+'°C</div>';";
+  html += "h+='<button class=\"btn-on\" onclick=\"control(\\'ac\\',1)\">Encender</button>';";
+  html += "h+='<button class=\"btn-off\" onclick=\"control(\\'ac\\',0)\">Apagar</button></div>';";
+  html += "h+='<div class=\"card\"><h2>💧 Sistema de Riego</h2>';";
+  html += "h+='<div class=\"status\">Estado: <span class=\"'+(d.riego?'on':'off')+'\">'+( d.riego?'ACTIVO':'Apagado')+'</span></div>';";
+  html += "h+='<div class=\"status\">Humedad: '+d.hum+'%</div>';";
+  html += "h+='<button class=\"btn-on\" onclick=\"control(\\'riego\\',1)\">Activar</button>';";
+  html += "h+='<button class=\"btn-off\" onclick=\"control(\\'riego\\',0)\">Desactivar</button></div>';";
+  html += "h+='<div class=\"card\"><h2>🚪 Puerta Automática</h2>';";
+  html += "h+='<div class=\"status\">Estado: <span class=\"'+(d.puerta?'on':'off')+'\">'+( d.puerta?'Cerrada':'Abierta')+'</span></div>';";
+  html += "h+='<button class=\"btn-on\" onclick=\"control(\\'puerta\\',1)\">Cerrar</button>';";
+  html += "h+='<button class=\"btn-off\" onclick=\"control(\\'puerta\\',0)\">Abrir</button></div>';";
+  html += "h+='<div class=\"card\"><h2>🛗 Ascensor</h2>';";
+  html += "h+='<div class=\"status\">Piso Actual: <span class=\"on\">'+d.piso+'</span></div>';";
+  html += "h+='<button onclick=\"control(\\'ascensor\\',0)\">PB</button>';";
+  html += "h+='<button onclick=\"control(\\'ascensor\\',1)\">Piso 1</button>';";
+  html += "h+='<button onclick=\"control(\\'ascensor\\',2)\">Piso 2</button>';";
+  html += "h+='<button onclick=\"control(\\'ascensor\\',3)\">Piso 3</button>';";
+  html += "h+='<button onclick=\"control(\\'ascensor\\',4)\">Piso 4</button></div>';";
+  html += "h+='<div class=\"consumo\">⚡ Consumo Total: '+d.consumo_total+' Wh</div>';";
+  html += "h+='<div class=\"card\"><h3>Detalle de Consumo</h3>';";
+  html += "h+='<div>💡 Luces: '+d.c_luces+' Wh</div>';";
+  html += "h+='<div>❄️ A/C: '+d.c_ac+' Wh</div>';";
+  html += "h+='<div>💧 Riego: '+d.c_riego+' Wh</div>';";
+  html += "h+='<div>🚪 Puerta: '+d.c_puerta+' Wh</div>';";
+  html += "h+='<div>🛗 Ascensor: '+d.c_ascensor+' Wh</div></div>';";
+  html += "document.getElementById('status').innerHTML=h;";
+  html += "});}";
+  html += "function control(dev,val){fetch('/api/control?dev='+dev+'&val='+val).then(()=>updateStatus());}";
+  html += "updateStatus();setInterval(updateStatus,2000);";
+  html += "</script></body></html>";
+  
+  server.send(200, "text/html", html);
+}
+
+void handleStatus() {
+  bool lucesEncendidas = modoManualLuces ? estadoManualLuces : movimientoDetectado;
+  bool acActivo = modoManualAC ? estadoManualAC : (lm75Detectado && temperaturaLM75 > 26);
+  bool riegoActivo = modoManualRiego ? estadoManualRiego : (porcentajeHumedad < 40);
+  bool puertaCerrada = modoManualPuerta ? estadoManualPuerta : (digitalRead(PIN_MC38) == LOW);
+  int pisoMostrar = modoManualAscensor ? pisoManualAscensor : pisoActual;
+  
+  String pisoTexto = (pisoMostrar == 0) ? "PB" : ("Piso " + String(pisoMostrar));
+  
+  float consumoTotal = energiaLuces + energiaAC + energiaRiego + energiaPuerta + energiaAscensor;
+  
+  String json = "{";
+  json += "\"luces\":" + String(lucesEncendidas ? "true" : "false") + ",";
+  json += "\"ac\":" + String(acActivo ? "true" : "false") + ",";
+  json += "\"riego\":" + String(riegoActivo ? "true" : "false") + ",";
+  json += "\"puerta\":" + String(puertaCerrada ? "true" : "false") + ",";
+  json += "\"piso\":\"" + pisoTexto + "\",";
+  json += "\"temp\":" + String(temperaturaLM75, 1) + ",";
+  json += "\"hum\":" + String(porcentajeHumedad) + ",";
+  json += "\"consumo_total\":" + String(consumoTotal, 4) + ",";
+  json += "\"c_luces\":" + String(energiaLuces, 4) + ",";
+  json += "\"c_ac\":" + String(energiaAC, 4) + ",";
+  json += "\"c_riego\":" + String(energiaRiego, 4) + ",";
+  json += "\"c_puerta\":" + String(energiaPuerta, 4) + ",";
+  json += "\"c_ascensor\":" + String(energiaAscensor, 4);
+  json += "}";
+  
+  server.send(200, "application/json", json);
+}
+
+void handleControl() {
+  if (server.hasArg("dev") && server.hasArg("val")) {
+    String dispositivo = server.arg("dev");
+    int valor = server.arg("val").toInt();
+    
+    tiempoControlManual = millis(); // Resetear timeout
+    
+    if (dispositivo == "luces") {
+      modoManualLuces = true;
+      estadoManualLuces = (valor == 1);
+    } else if (dispositivo == "ac") {
+      modoManualAC = true;
+      estadoManualAC = (valor == 1);
+    } else if (dispositivo == "riego") {
+      modoManualRiego = true;
+      estadoManualRiego = (valor == 1);
+    } else if (dispositivo == "puerta") {
+      modoManualPuerta = true;
+      estadoManualPuerta = (valor == 1);
+    } else if (dispositivo == "ascensor") {
+      modoManualAscensor = true;
+      pisoManualAscensor = valor;
+    }
+    
+    server.send(200, "text/plain", "OK");
+  } else {
+    server.send(400, "text/plain", "Bad Request");
+  }
 }
 
 // ==================== FUNCIONES OLED ====================
@@ -507,34 +926,27 @@ void actualizarOLED() {
   // === LÍNEA 5: Ascensor (altura) ===
   display.drawStr(0, 54, "Ascensor:");
   if (bmp180Detectado) {
-    // Calcular planta actual basada en altura
-    float alturaTotal = deltaAltura;
-    int planta = 0;
-    
-    if (alturaTotal < 2.0) {
-      // Planta baja (0-2m)
-      planta = 0;
-      display.drawStr(55, 54, "PB");
-    } else if (alturaTotal < 6.0) {
-      // Planta 1 (2-6m)
-      planta = 1;
-      display.drawStr(55, 54, "Piso 1");
-    } else if (alturaTotal < 10.0) {
-      // Planta 2 (6-10m)
-      planta = 2;
-      display.drawStr(55, 54, "Piso 2");
-    } else if (alturaTotal < 14.0) {
-      // Planta 3 (10-14m)
-      planta = 3;
-      display.drawStr(55, 54, "Piso 3");
-    } else {
-      // Planta 4 o superior (14m+)
-      planta = 4;
-      display.drawStr(55, 54, "Piso 4");
+    // Mostrar piso basado en simulación
+    switch(pisoActual) {
+      case 0:
+        display.drawStr(55, 54, "PB");
+        break;
+      case 1:
+        display.drawStr(55, 54, "Piso 1");
+        break;
+      case 2:
+        display.drawStr(55, 54, "Piso 2");
+        break;
+      case 3:
+        display.drawStr(55, 54, "Piso 3");
+        break;
+      case 4:
+        display.drawStr(55, 54, "Piso 4");
+        break;
     }
     
-    // Mostrar altura en metros al final
-    sprintf(buffer, "%.1fm", alturaTotal);
+    // Mostrar delta altura real (sin escala) al final
+    sprintf(buffer, "%.2fm", deltaAltura);
     display.drawStr(95, 54, buffer);
   } else {
     display.drawStr(55, 54, "N/A");
