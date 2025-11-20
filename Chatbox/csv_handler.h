@@ -1,36 +1,26 @@
-#include "csv_handler.h"
+%%writefile csv_handler.h
+#ifndef CSV_HANDLER_H
+#define CSV_HANDLER_H
 
-std::vector<SensorData> loadCSV(const std::string& filename) {
-    std::vector<SensorData> data;
-    std::ifstream file(filename);
+#include <string>
+#include <vector>
+#include <fstream>
+#include <sstream>
+#include <cstdio>
 
-    if (!file.is_open()) {
-        printf("  No se pudo abrir el archivo CSV: %s\n", filename.c_str());
-        printf("    Usando datos de ejemplo...\n\n");
-        return data;
-    }
+// ======================= Estructura de Datos CSV =======================
+struct SensorData {
+    std::string fecha_hora;
+    float timestamp;
+    float luces;
+    float ac;
+    float riego;
+    float puerta;
+    float ascensor;
+    float total;
+};
 
-    std::string line;
-    std::getline(file, line); // Skip header
+// ======================= Funciones CSV =======================
+std::vector<SensorData> loadCSV(const std::string& filename);
 
-    while (std::getline(file, line)) {
-        std::stringstream ss(line);
-        SensorData record;
-        std::string value;
-
-        std::getline(ss, record.fecha_hora, ',');
-        std::getline(ss, value, ','); record.timestamp = std::stof(value);
-        std::getline(ss, value, ','); record.luces = std::stof(value);
-        std::getline(ss, value, ','); record.ac = std::stof(value);
-        std::getline(ss, value, ','); record.riego = std::stof(value);
-        std::getline(ss, value, ','); record.puerta = std::stof(value);
-        std::getline(ss, value, ','); record.ascensor = std::stof(value);
-        std::getline(ss, value, ','); record.total = std::stof(value);
-
-        data.push_back(record);
-    }
-
-    file.close();
-    printf("CSV cargado: %zu registros\n\n", data.size());
-    return data;
-}
+#endif // CSV_HANDLER_H
