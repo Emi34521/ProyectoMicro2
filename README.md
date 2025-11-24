@@ -57,7 +57,7 @@ Estado: completo
 | **A0** | FC-28 | Humedad (analógico) |
 
 ---
-## Smart Home CSV Analyzer
+## Smart Home CSV Analyzer (ver.1 - commit 29)
 
 Sistema de análisis de consumo energético con procesamiento NLU en CUDA.
 
