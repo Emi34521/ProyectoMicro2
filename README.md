@@ -143,3 +143,4 @@ Edita `common.h` para modificar:
 - Ajusta `-arch=sm_XX` en el Makefile según tu GPU
 - El sistema usa memoria pinned para transfers rápidos
 - Implementa streams CUDA para overlapping
+- En el siguiente link puedes ver un ejemplo implementación en google collab: https://colab.research.google.com/drive/1coOUo3VKRwqS7JfElEv0dOeUtbZ394T1?usp=sharing
