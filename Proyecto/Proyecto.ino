@@ -740,6 +740,10 @@ void configurarServidorWeb() {
   server.on("/", handleRoot);
   server.on("/api/status", handleStatus);
   server.on("/api/control", handleControl);
+  server.on("/api/chatbox", handleChatboxCommand);
+  
+  // Habilitar CORS para permitir peticiones desde cualquier origen
+  server.enableCORS(true);
 }
 
 void handleRoot() {
@@ -795,10 +799,45 @@ void handleRoot() {
   html += "h+='<div>💧 Riego: '+d.c_riego+' Wh</div>';";
   html += "h+='<div>🚪 Puerta: '+d.c_puerta+' Wh</div>';";
   html += "h+='<div>🛗 Ascensor: '+d.c_ascensor+' Wh</div></div>';";
+  html += "<div class=\"card\"><h2>🤖 Chatbox CUDA</h2>";
+  html += "<div id=\"chatbox-status\">No conectado</div>";
+  html += "<div style=\"margin-top:10px\">";
+  html += "<input type=\"text\" id=\"chatbox-cmd\" placeholder=\"Escribe un comando...\" ";
+  html += "style=\"width:70%;padding:10px;border:1px solid #ddd;border-radius:5px\">";
+  html += "<button onclick=\"sendChatboxCmd()\" style=\"width:25%;margin-left:5px;padding:10px\">";
+  html += "Enviar</button></div>";
+  html += "<div id=\"chatbox-response\" style=\"margin-top:10px;padding:10px;background:#f0f0f0;";
+  html += "border-radius:5px;min-height:50px\"></div></div>";
   html += "document.getElementById('status').innerHTML=h;";
   html += "});}";
   html += "function control(dev,val){fetch('/api/control?dev='+dev+'&val='+val).then(()=>updateStatus());}";
   html += "updateStatus();setInterval(updateStatus,2000);";
+  html += """function sendChatboxCmd() {
+              const input = document.getElementById('chatbox-cmd');
+              const cmd = input.value.trim();
+              if (!cmd) return;
+              
+              fetch('/api/chatbox?command=' + encodeURIComponent(cmd))
+                .then(r => r.json())
+                .then(d => {
+                  const resp = document.getElementById('chatbox-response');
+                  if (d.status === 'ok') {
+                    resp.innerHTML = '✓ ' + d.action;
+                    resp.style.color = '#4CAF50';
+                  } else {
+                    resp.innerHTML = '✗ ' + d.msg;
+                    resp.style.color = '#f44336';
+                  }
+                  input.value = '';
+                  updateStatus();
+                })
+                .catch(e => {
+                  document.getElementById('chatbox-response').innerHTML = 'Error de conexión';
+                });
+            }""";
+
+  // Permitir enviar con Enter
+  html += "document.getElementById('chatbox-cmd').addEventListener('keypress', function(e) {if (e.key === 'Enter') sendChatboxCmd();});"
   html += "</script></body></html>";
   
   server.send(200, "text/html", html);
@@ -862,6 +901,132 @@ void handleControl() {
     server.send(200, "text/plain", "OK");
   } else {
     server.send(400, "text/plain", "Bad Request");
+  }
+}
+
+// Nuevo endpoint para recibir comandos del chatbox
+void handleChatboxCommand() {
+  if (!server.hasArg("command")) {
+    server.send(400, "application/json", "{\"status\":\"error\",\"msg\":\"No command\"}");
+    return;
+  }
+  
+  String command = server.arg("command");
+  command.toLowerCase();
+  
+  String response = "{\"status\":\"ok\",\"command\":\"" + command + "\",\"action\":\"";
+  bool validCommand = false;
+  
+  tiempoControlManual = millis(); // Resetear timeout
+  
+  // Procesar comandos de luces
+  if (command.indexOf("encender luces") >= 0 || command.indexOf("prender luces") >= 0) {
+    modoManualLuces = true;
+    estadoManualLuces = true;
+    response += "Luces encendidas";
+    validCommand = true;
+  }
+  else if (command.indexOf("apagar luces") >= 0) {
+    modoManualLuces = true;
+    estadoManualLuces = false;
+    response += "Luces apagadas";
+    validCommand = true;
+  }
+  
+  // Procesar comandos de A/C
+  else if (command.indexOf("encender ac") >= 0 || command.indexOf("activar ac") >= 0 ||
+           command.indexOf("encender aire") >= 0 || command.indexOf("activar aire") >= 0) {
+    modoManualAC = true;
+    estadoManualAC = true;
+    response += "A/C activado";
+    validCommand = true;
+  }
+  else if (command.indexOf("apagar ac") >= 0 || command.indexOf("desactivar ac") >= 0 ||
+           command.indexOf("apagar aire") >= 0) {
+    modoManualAC = true;
+    estadoManualAC = false;
+    response += "A/C desactivado";
+    validCommand = true;
+  }
+  
+  // Procesar comandos de riego
+  else if (command.indexOf("activar riego") >= 0 || command.indexOf("encender riego") >= 0) {
+    modoManualRiego = true;
+    estadoManualRiego = true;
+    response += "Riego activado";
+    validCommand = true;
+  }
+  else if (command.indexOf("desactivar riego") >= 0 || command.indexOf("apagar riego") >= 0) {
+    modoManualRiego = true;
+    estadoManualRiego = false;
+    response += "Riego desactivado";
+    validCommand = true;
+  }
+  
+  // Procesar comandos de puerta
+  else if (command.indexOf("cerrar puerta") >= 0) {
+    modoManualPuerta = true;
+    estadoManualPuerta = true;
+    response += "Puerta cerrada";
+    validCommand = true;
+  }
+  else if (command.indexOf("abrir puerta") >= 0) {
+    modoManualPuerta = true;
+    estadoManualPuerta = false;
+    response += "Puerta abierta";
+    validCommand = true;
+  }
+  
+  // Procesar comandos de ascensor
+  else if (command.indexOf("pb") >= 0 || command.indexOf("planta baja") >= 0) {
+    modoManualAscensor = true;
+    pisoManualAscensor = 0;
+    response += "Ascensor a PB";
+    validCommand = true;
+  }
+  else if (command.indexOf("piso 1") >= 0) {
+    modoManualAscensor = true;
+    pisoManualAscensor = 1;
+    response += "Ascensor a Piso 1";
+    validCommand = true;
+  }
+  else if (command.indexOf("piso 2") >= 0) {
+    modoManualAscensor = true;
+    pisoManualAscensor = 2;
+    response += "Ascensor a Piso 2";
+    validCommand = true;
+  }
+  else if (command.indexOf("piso 3") >= 0) {
+    modoManualAscensor = true;
+    pisoManualAscensor = 3;
+    response += "Ascensor a Piso 3";
+    validCommand = true;
+  }
+  else if (command.indexOf("piso 4") >= 0) {
+    modoManualAscensor = true;
+    pisoManualAscensor = 4;
+    response += "Ascensor a Piso 4";
+    validCommand = true;
+  }
+  
+  // Comando de modo automático
+  else if (command.indexOf("modo automatico") >= 0 || command.indexOf("automatico") >= 0) {
+    modoManualLuces = false;
+    modoManualAC = false;
+    modoManualRiego = false;
+    modoManualPuerta = false;
+    modoManualAscensor = false;
+    response += "Modo automatico activado";
+    validCommand = true;
+  }
+  
+  if (validCommand) {
+    response += "\"}";
+    server.send(200, "application/json", response);
+    Serial.println("Comando recibido: " + command);
+  } else {
+    server.send(400, "application/json", 
+                "{\"status\":\"error\",\"msg\":\"Comando no reconocido\"}");
   }
 }
 
