@@ -7,7 +7,7 @@
 
 // ======================= Parámetros Globales =======================
 constexpr int D = 8192;        // Dimensión para NLU
-constexpr int K = 8;           // Número de intenciones
+constexpr int K = 10;          // Número de intenciones (aumentado para comandos)
 constexpr int MAX_QUERY = 512; // Tamaño máximo de query
 constexpr int C = 7;           // Columnas CSV
 
@@ -34,13 +34,16 @@ enum Intent {
     ESTADO = 4,
     AYUDA = 5,
     ESTADISTICAS = 6,
-    COMPARAR = 7
+    COMPARAR = 7,
+    CONTROL = 8,      // comandos de control
+    MODO_MANUAL = 9   // activar/desactivar modo manual
 };
 
 // ======================= Nombres de Intenciones =======================
 static const char* intentNames[K] = {
     "CONSUMO", "PUERTA", "LUCES", "A/C",
-    "ESTADO", "AYUDA", "ESTADISTICAS", "COMPARAR"
+    "ESTADO", "AYUDA", "ESTADISTICAS", "COMPARAR",
+    "CONTROL", "MODO_MANUAL"
 };
 
 #endif // COMMON_H
