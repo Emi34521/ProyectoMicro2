@@ -144,3 +144,12 @@ Edita `common.h` para modificar:
 - El sistema usa memoria pinned para transfers rápidos
 - Implementa streams CUDA para overlapping
 - En el siguiente link puedes ver un ejemplo implementación en google collab: https://colab.research.google.com/drive/1coOUo3VKRwqS7JfElEv0dOeUtbZ394T1?usp=sharing
+
+## Smart Home CSV Analyzer (ver.2 - último commit)
+
+Primero correr Chatbox y seguir instrucciones de inicialización. Luego se podrán realizar consultas tanto en consola como en la página web. 
+Sin embargo previo a ello, instalar libcurl:
+
+```bash
+sudo apt-get install libcurl4-openssl-dev
+```
