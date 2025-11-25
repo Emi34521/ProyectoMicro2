@@ -159,6 +159,7 @@ void configurarServidorWeb();
 void handleRoot();
 void handleStatus();
 void handleControl();
+void handleChatboxCommand();
 
 // ==================== SETUP ====================
 void setup() {
@@ -1025,8 +1026,7 @@ void handleChatboxCommand() {
     server.send(200, "application/json", response);
     Serial.println("Comando recibido: " + command);
   } else {
-    server.send(400, "application/json", 
-                "{\"status\":\"error\",\"msg\":\"Comando no reconocido\"}");
+    server.send(400, "application/json", "{\"status\":\"error\",\"msg\":\"Comando no reconocido\"}");
   }
 }
 
