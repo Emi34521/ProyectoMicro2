@@ -45,6 +45,14 @@ void NLUEngine::initIntentPrototypes() {
         double acc = 0;
         for (int j = 0; j < D; ++j) {
             unsigned int seed = (k + 1) * 1103515245u + j * 12345u;
+            // Variación especial para CONTROL
+            if (k == 8) {
+                seed = seed * 9876u + 54321u;
+            }
+            // Variación especial para MODO_MANUAL
+            if (k == 9) {
+                seed = seed * 1111u + 99999u;
+            }
             float v = float((seed % 1000)) / 1000.0f;
             hM[k * D + j] = v;
             acc += double(v) * double(v);
